@@ -1,0 +1,7 @@
+interface:
+  display_name: "徐州工程学院实训报告格式整理以及生成skill"
+  short_description: "依据保存范本生成和检查徐州工程学院实训报告，严格执行字体、段落、图表、目录与引文格式"
+  icon_large: "./assets/preview.png"
+  default_prompt: "使用 $artifact-template-xzit-training-report，根据我提供的新文献编写实训报告，严格执行范本格式并输出Word、PDF与检查记录。"
+policy:
+  allow_implicit_invocation: true
