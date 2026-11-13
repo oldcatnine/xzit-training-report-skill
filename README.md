@@ -10,6 +10,8 @@
 
 支持新报告、现有报告格式检查、只整理文献和提纲。姓名、学号、班级、指导教师、实训经历必须由用户提供；缺少时保留待补草稿，不编造。
 
+已补充本机Word工作流、用户指定身份留空模式，以及按本次任务篇数运行的引用检查。用`audit_citations.py report.docx --min-references 10`可检查实际引用是否满足该次任务；数字由任务决定。
+
 ## 内容
 
 - [格式与证据](skills/artifact-template-xzit-training-report/references/format-requirements.md)：23项明确格式规则与实际版式观测值。

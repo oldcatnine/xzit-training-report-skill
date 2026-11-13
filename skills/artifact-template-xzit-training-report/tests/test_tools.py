@@ -7,6 +7,7 @@ sys.path.insert(0,str(ROOT/'scripts'))
 from build_report import build
 from audit_docx import audit
 from report_format import child
+from audit_citations import audit as audit_refs
 
 def fixture():
     return dict(title_zh='排版工具测试',title_en='Format Tool Test',student='测试姓名',student_id='0000',**{'class':'测试班级'},supervisor='测试教师',major='测试专业',date='2026年11月13日',abstract_zh='仅用于验证排版工具，不构成实训研究。',abstract_en='This is a formatting test fixture only.',keywords_zh=['排版','测试'],keywords_en=['formatting','test'],blocks=[{'type':'heading','level':1,'text':'1 测试章节'},{'type':'paragraph','text':'仅验证排版，不作研究结论[1]。'},{'type':'heading','level':2,'text':'1.1 测试小节'},{'type':'heading','level':4,'text':'1.1.1.1 四级测试'},{'type':'table','caption':'表1-1 测试表','rows':[['项目','说明'],['用途','单元测试']]}],conclusion='工具测试结束。',acknowledgements='此为测试占位，非真实致谢。',references=['测试作者. 测试文献[J]. 测试刊名, 2026.'])
@@ -48,5 +49,16 @@ class ToolsTest(unittest.TestCase):
         def f(d):next(p for p in d.paragraphs if p.style.name=='XZITAbstractTitleEN').runs[0].bold=False
         self.assertTrue(any(x['rule']=='F08' for x in self.mutate(f)['failures']))
     def test_always_requires_manual_review(self):self.assertFalse(audit(self.path)['ready_for_submission'])
+    def test_explicit_blank_identity_is_preserved(self):
+        data=fixture();data['identity_mode']='blank'
+        for key in ('student','student_id','class','supervisor','major'):data[key]=''
+        path=Path(self.tmp.name)/'blank.docx';build(data,path)
+        self.assertTrue(all(not row.cells[1].text for row in Document(path).tables[2].rows))
+    def test_task_specific_reference_minimum(self):
+        self.assertEqual(audit_refs(self.path,1)['status'],'pass')
+        self.assertEqual(audit_refs(self.path,10)['status'],'fail')
+    def test_uncited_bibliography_fails(self):
+        doc=Document(self.path);doc.add_paragraph('[2] Uncited test source.',style='XZITReference');doc.save(self.path)
+        self.assertTrue(any('Uncited' in x for x in audit_refs(self.path)['failures']))
 
 if __name__=='__main__':unittest.main()

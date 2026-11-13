@@ -6,7 +6,7 @@ from docx import Document
 from docx.text.paragraph import Paragraph
 from docx.table import Table
 from docx.shared import Inches
-from docx.shared import Pt
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from report_format import install_styles,paragraph,field,child
@@ -15,7 +15,11 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def validate(data):
     required=('title_zh','title_en','student','student_id','class','supervisor','major','date','abstract_zh','abstract_en','keywords_zh','keywords_en','blocks','references','acknowledgements')
+    identity_keys=('student','student_id','class','supervisor','major')
     for key in required:
+        if key in identity_keys and data.get('identity_mode')=='blank':
+            if key not in data or not isinstance(data[key],str):raise ValueError('Blank identity fields must be explicit strings: '+key)
+            continue
         if not data.get(key):raise ValueError('Missing nonempty input: '+key)
     if not isinstance(data['keywords_en'],list) or any(not re.fullmatch(r'[a-z0-9]+(?: [a-z0-9]+)*',x) for x in data['keywords_en']):
         raise ValueError('English keywords must be lowercase words without punctuation')
@@ -111,29 +115,46 @@ def build(data,output):
         elif typ=='figure':
             width=float(b.get('width_inches',4.5))
             if not 0<width<=6.4:raise ValueError('Figure width exceeds content area')
-            p=paragraph(doc,'','Figure');p.add_run().add_picture(b['path'],width=Inches(width))
+            p=paragraph(doc,'','Figure');p.paragraph_format.keep_with_next=True
+            p.add_run().add_picture(b['path'],width=Inches(width))
             paragraph(doc,b['caption'],'Caption')
         elif typ=='table':
             rows=b['rows']
             if not rows or not rows[0] or any(len(r)!=len(rows[0]) for r in rows):raise ValueError('Table must be rectangular and nonempty')
             p=paragraph(doc,b['caption'],'Caption');p.paragraph_format.keep_with_next=True
             table=doc.add_table(rows=len(rows),cols=len(rows[0]));table.autofit=True
+            widths=b.get('widths_cm')
+            if widths:
+                if len(widths)!=len(rows[0]) or any(w<=0 for w in widths) or sum(widths)>16.51:raise ValueError('Invalid table column widths')
+                table.autofit=False
+                for col,w in zip(table.columns,widths):col.width=Cm(w)
+                for row in table.rows:
+                    for cell,w in zip(row.cells,widths):cell.width=Cm(w)
             borders=child(table._tbl.tblPr,'w:tblBorders')
             for side in ('top','bottom','left','right','insideH','insideV'):
                 child(borders,'w:'+side,val='single' if side in ('top','bottom') else 'nil',sz=8,color='000000')
             for i,row in enumerate(table.rows):
+                child(row._tr.get_or_add_trPr(),'w:cantSplit',val=1)
                 if i==0:child(row._tr.get_or_add_trPr(),'w:tblHeader',val=1)
                 for j,cell in enumerate(row.cells):
                     p=cell.paragraphs[0];p.style='XZITTable';p.add_run(str(rows[i][j]))
+                    # Keep short comparison tables intact; long tables require
+                    # rendered continuation labels rather than invisible guessing.
+                    if len(rows)<=8:p.paragraph_format.keep_with_next=i<len(rows)-1
+                    margins=child(cell._tc.get_or_add_tcPr(),'w:tcMar')
+                    for side in ('top','bottom'):child(margins,'w:'+side,w=65,type='dxa')
                     if i==0:child(child(cell._tc.get_or_add_tcPr(),'w:tcBorders'),'w:bottom',val='single',sz=4,color='000000')
     if data.get('conclusion'):
         paragraph(doc,'结论','H1')
-        paragraph(doc,data['conclusion'],'Body')
+        for part in data['conclusion'].split('\n'):
+            if part.strip():paragraph(doc,part,'Body')
     paragraph(doc,'致谢','H1');paragraph(doc,data['acknowledgements'],'Body')
     paragraph(doc,'参考文献','H1')
     for i,entry in enumerate(data['references'],1):paragraph(doc,f'[{i}] {entry}','Reference')
     for appendix in data.get('appendices',[]):
-        paragraph(doc,appendix['title'],'H1');paragraph(doc,appendix['text'],'Body')
+        paragraph(doc,appendix['title'],'H1')
+        for part in appendix['text'].split('\n'):
+            if part.strip():paragraph(doc,part,'Body')
     child(doc.settings.element,'w:updateFields',val='true')
     output.parent.mkdir(parents=True,exist_ok=True);doc.save(output)
     return output

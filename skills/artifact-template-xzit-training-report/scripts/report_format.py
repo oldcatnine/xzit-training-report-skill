@@ -30,6 +30,8 @@ ROLES = {
  'TOC1': ('黑体',12,'exact',0,'left',None),
  'TOC2': ('宋体',12,'exact',0,'left',None),
  'TOC3': ('宋体',12,'exact',0,'left',None),
+ 'Equation': ('Times New Roman',12,'single',0,'left',None),
+ 'Definition': ('宋体',12,'exact',0,'left',None),
 }
 
 def child(parent, tag, **attrs):
