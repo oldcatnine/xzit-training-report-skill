@@ -14,6 +14,8 @@
 
 ## 内容
 
+正文引文现自动设置为可跳转的右上角上标；文后DOI使用完整超链接。正文三线表按保留范本使用1.5磅线条。现有报告可运行`scholarly_format.py input.docx output.docx`修正；Word小黑方点先按非打印格式标记检查，不删除分页设置。文字需逐段审读，少用套话与空泛自我说明。
+
 - [格式与证据](skills/artifact-template-xzit-training-report/references/format-requirements.md)：23项明确格式规则与实际版式观测值。
 - [文献工作流](skills/artifact-template-xzit-training-report/references/literature-workflow.md)：学习三份用户范文的结构，支持光伏回收及寿命预测任务。
 - `build_report.py`：克隆范本生成封面、摘要、目录、正文、三线表、嵌入图与参考文献。

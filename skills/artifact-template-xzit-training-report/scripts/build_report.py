@@ -156,6 +156,15 @@ def build(data,output):
         for part in appendix['text'].split('\n'):
             if part.strip():paragraph(doc,part,'Body')
     child(doc.settings.element,'w:updateFields',val='true')
+    # The retained DOC was saved with Word 2003 compatibility (11). Modern
+    # DOCX output should keep editable equations instead of offering conversion.
+    compat=child(doc.settings.element,'w:compat')
+    modes=[node for node in compat if node.tag==qn('w:compatSetting') and node.get(qn('w:name'))=='compatibilityMode']
+    mode=modes[0] if modes else child(compat,'w:compatSetting',name='compatibilityMode')
+    mode.set(qn('w:uri'),'http://schemas.microsoft.com/office/word')
+    mode.set(qn('w:val'),str(data.get('compatibility_mode',15)))
+    from scholarly_format import format_document
+    format_document(doc)
     output.parent.mkdir(parents=True,exist_ok=True);doc.save(output)
     return output
 

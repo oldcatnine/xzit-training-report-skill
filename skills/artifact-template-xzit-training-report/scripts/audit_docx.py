@@ -3,6 +3,7 @@ import argparse,json,re
 from pathlib import Path
 from docx import Document
 from docx.text.paragraph import Paragraph
+from docx.text.run import Run
 from docx.oxml.ns import qn
 from report_format import ROLES
 
@@ -82,7 +83,8 @@ def audit(path,role_map=None):
         if outline is not None:
             if pp.get('outlineLvl',{}).get('val')!=str(outline):error('F13-F16',where,'Incorrect outline level')
             if spacing.get('beforeLines')!='50' or spacing.get('afterLines')!='50':error('F13-F16',where,'Heading needs 0.5 LINE before and after')
-        for r in p.runs:
+        for relement in p._p.xpath('./w:r | ./w:hyperlink/w:r'):
+            r=Run(relement,p)
             if not r.text.strip():continue
             _,rp=effective(p,r);rf=rp.get('rFonts',{})
             if rp.get('sz',{}).get('val')!=str(int(size*2)):error('F-font',where,'Incorrect effective font size')
