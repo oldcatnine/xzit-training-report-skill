@@ -32,6 +32,7 @@ ROLES = {
  'TOC3': ('宋体',12,'exact',0,'left',None),
  'Equation': ('Times New Roman',12,'single',0,'left',None),
  'Definition': ('宋体',12,'exact',0,'left',None),
+ 'Continuation': ('宋体',10.5,'single',0,'right',None),
 }
 
 def child(parent, tag, **attrs):
@@ -49,7 +50,7 @@ def install_styles(doc):
         s.font.color.rgb=None
         child(s.element.get_or_add_rPr(),'w:rFonts',eastAsia=font,ascii=(font if font in ('Arial','Times New Roman') else 'Times New Roman'),hAnsi=(font if font in ('Arial','Times New Roman') else 'Times New Roman'))
         pf=s.paragraph_format
-        pf.alignment={'center':WD_ALIGN_PARAGRAPH.CENTER,'left':WD_ALIGN_PARAGRAPH.LEFT,'both':WD_ALIGN_PARAGRAPH.JUSTIFY}[align]
+        pf.alignment={'center':WD_ALIGN_PARAGRAPH.CENTER,'left':WD_ALIGN_PARAGRAPH.LEFT,'right':WD_ALIGN_PARAGRAPH.RIGHT,'both':WD_ALIGN_PARAGRAPH.JUSTIFY}[align]
         pf.first_line_indent=Pt(indent);pf.left_indent=Pt(0);pf.right_indent=Pt(0)
         pf.space_before=Pt(0);pf.space_after=Pt(0)
         if line=='exact':pf.line_spacing=Pt(20)

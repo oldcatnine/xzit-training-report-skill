@@ -9,9 +9,13 @@ description: 按用户保存的徐州工程学院实训报告范本生成、改�
 
 ## 生成与核验
 
+首次使用、需要完整示例或排错时读[详细使用文档](references/usage-guide.md)，配套[演示输入](examples/report-input.json)仅供验证工具，内容及文献不可用于提交。
+
+常规任务优先使用[统一入口](references/pipeline.md)：`python scripts/report_pipeline.py input.json new-output --word --auto-continue --render --min-references N`。它生成/修复副本、更新Word字段、按实际分页拆分续表、导出PDF、渲染并汇总检查。N由任务决定，可省略；没有Word时移除相关参数并明确目录未更新。详见[input-schema](references/input-schema.md)的可选章节、可编辑公式、续表和证据记录。自动化成功后仍执行下列内容及逐页验收。
+
 1. 确定本次是综述、实训过程还是含真实实验/建模的报告；读取新文献、任务书及身份信息。读[文献工作流](references/literature-workflow.md)，建立论断—来源—页码—条件的证据表。未知身份可生成明确待补草稿，不能编造实训经历、数据、精度或参考文献。
 2. 按任务安排中英文题目、摘要、关键词、目录、正文、结论、致谢、文献及可选附录；不把样例篇幅/数量当成学校要求。任务非光伏时仅使用通用格式，不强行套用光伏章节。
-3. 加载[@documents](plugin://documents@openai-primary-runtime)的模板工作流，克隆原件到新路径，保留校徽、页面、封面几何及页眉页脚。也可用`python scripts/build_report.py input.json report.docx`起稿，见[input-schema](references/input-schema.md)。复杂公式、续表、交叉引用须由文档工具完成，不得因脚本限制省略内容。原件不覆盖。
+3. 加载[@documents](plugin://documents@openai-primary-runtime)的模板工作流，克隆原件到新路径，保留校徽、页面、封面几何及页眉页脚。也可用`python scripts/build_report.py input.json report.docx`起稿，见[input-schema](references/input-schema.md)。公式块支持原生OMML及常用结构，复杂公式可提供OMML；交叉引用等未覆盖功能用文档工具补齐，不得省略内容。结论、致谢和附录按任务可选。原件不覆盖。
 4. 按[执行契约](references/artifact-contract.md)记录规则版本、输入哈希、槽位、偏离依据和检查结果。工具细节不进入报告正文。
 5. 运行`python scripts/audit_docx.py report.docx --output audit.json`，修复失败项。检查的是实际生效格式；未知角色必须映射或人工核验，不能只看样式定义。机器通过不等于最终可提交。
 6. 用Word/LibreOffice更新目录、页码、交叉引用；Windows可用`scripts/refresh_fields.ps1`另存副本并导出PDF。修复“错误!未定义书签”，不能交付未更新的目录占位为终稿。
@@ -25,6 +29,8 @@ description: 按用户保存的徐州工程学院实训报告范本生成、改�
 ## 只检查现有报告
 
 先读全部规则并在副本上工作，列位置、错误和修复依据。保留作者结论、公式对象、链接、图片。对非`XZIT*`样式建立角色映射，不能跳过未知正文；题注不能误当正文。格式任务不擅自重写科研结论。
+
+现有DOCX可用统一入口的`--role-map roles.json --normalize`按角色整理；不重建旧稿封面或猜测未知段落。引文格式化与检查共用正文/文献区识别规则，支持Word内置标题及自定义样式映射。无法识别时应修正映射后重试，不能以零引用或零检查项判通过。实际来源核实与证据登记分开，`evidence.json`不能作为已完成事实核验的证明。
 
 ## 易错约束
 

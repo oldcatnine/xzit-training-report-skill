@@ -2,6 +2,10 @@
 
 依据用户保存的《实训报告模板.doc》制作的报告生成与检查技能。格式优先；以范本明确说明为依据，不声称是学校发布的最新统一标准。
 
+**[详细使用文档](skills/artifact-template-xzit-training-report/references/usage-guide.md)**：环境准备、自然语言调用、完整示例、全部命令参数、旧稿映射、公式、续表、输出解释与常见问题。
+
+配套：[可运行演示输入](skills/artifact-template-xzit-training-report/examples/report-input.json) · [输入字段规范](skills/artifact-template-xzit-training-report/references/input-schema.md) · [验证记录](VALIDATION.md)。演示内容及文献均非真实研究，不能直接提交。
+
 ## 使用
 
 将 `skills/artifact-template-xzit-training-report` 放进个人技能目录（Codex：`~/.codex/skills/`），重新加载后输入：
@@ -18,7 +22,9 @@
 
 - [格式与证据](skills/artifact-template-xzit-training-report/references/format-requirements.md)：23项明确格式规则与实际版式观测值。
 - [文献工作流](skills/artifact-template-xzit-training-report/references/literature-workflow.md)：学习三份用户范文的结构，支持光伏回收及寿命预测任务。
-- `build_report.py`：克隆范本生成封面、摘要、目录、正文、三线表、嵌入图与参考文献。
+- `report_pipeline.py`：统一生成/整理、Word字段更新、基于实际分页的自动续表、PDF/PNG导出与检查汇总。
+- `build_report.py`：克隆范本生成封面、摘要、目录、正文、三线表、嵌入图、原生可编辑公式与参考文献；结论、致谢和附录可选。
+- `normalize_report.py`：按显式角色映射整理旧稿，保留公式、图片、域、链接和上下标；未知段落列为待核。
 - `audit_docx.py`：检查实际生效格式、节设置、关键词和残留占位；机器检查不代替引文核验与逐页视觉验收。
 - `refresh_fields.ps1`：用 Windows Word 更新字段，另存DOCX和PDF。
 
@@ -28,9 +34,10 @@
 python -m unittest discover -s skills/artifact-template-xzit-training-report/tests -v
 python skills/artifact-template-xzit-training-report/scripts/build_report.py input.json output.docx
 python skills/artifact-template-xzit-training-report/scripts/audit_docx.py output.docx --output audit.json
+python skills/artifact-template-xzit-training-report/scripts/report_pipeline.py input.json new-output --word --auto-continue --render --min-references 10
 ```
 
-输入见 [schema](skills/artifact-template-xzit-training-report/references/input-schema.md)。脚本拒绝覆盖已有输出；复杂公式、续表和交叉引用由文档工具继续完成并渲染检查。
+输入见 [schema](skills/artifact-template-xzit-training-report/references/input-schema.md)，统一入口及旧稿模式见[使用说明](skills/artifact-template-xzit-training-report/references/pipeline.md)。脚本拒绝覆盖已有输出；高级公式可传OMML，交叉引用等未覆盖功能用文档工具补齐并渲染检查。Word/Poppler为可选本机依赖；未更新目录的起稿不能称为终稿。文献证据记录不等于真实性核实，最终仍需来源与逐页核验。
 
 GitHub参考：[format-thesis-docx](https://github.com/wksudud/format-thesis-docx)、[lab-report-skill](https://github.com/WinterMoonlight/lab-report-skill)，仅借鉴流程，无代码复制，详见技能内调研记录。
 

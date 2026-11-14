@@ -14,11 +14,13 @@ from report_format import install_styles,paragraph,field,child
 ROOT=Path(__file__).resolve().parents[1]
 
 def validate(data):
-    required=('title_zh','title_en','student','student_id','class','supervisor','major','date','abstract_zh','abstract_en','keywords_zh','keywords_en','blocks','references','acknowledgements')
+    required=('title_zh','title_en','student','student_id','class','supervisor','major','date','abstract_zh','abstract_en','keywords_zh','keywords_en','blocks','references')
+    if not isinstance(data,dict):raise ValueError('Input must be a JSON object')
+    if data.get('identity_mode','required') not in ('blank','required'):raise ValueError('Unknown identity_mode')
     identity_keys=('student','student_id','class','supervisor','major')
     for key in required:
         if key in identity_keys and data.get('identity_mode')=='blank':
-            if key not in data or not isinstance(data[key],str):raise ValueError('Blank identity fields must be explicit strings: '+key)
+            if key not in data or data[key]!='':raise ValueError('Blank identity fields must be explicit empty strings: '+key)
             continue
         if not data.get(key):raise ValueError('Missing nonempty input: '+key)
     if not isinstance(data['keywords_en'],list) or any(not re.fullmatch(r'[a-z0-9]+(?: [a-z0-9]+)*',x) for x in data['keywords_en']):
@@ -27,9 +29,25 @@ def validate(data):
     if not isinstance(data['blocks'],list):raise ValueError('blocks must be a list')
     if not any(b.get('type')=='heading' and b.get('level')==1 for b in data['blocks']):raise ValueError('At least one chapter is required')
     for b in data['blocks']:
-        if b.get('type') not in ('heading','paragraph','table','figure'):raise ValueError('Unsupported block; use document tools for complex content: '+str(b.get('type')))
+        if b.get('type') not in ('heading','paragraph','table','figure','equation'):raise ValueError('Unsupported block: '+str(b.get('type')))
         if b['type']=='heading' and b.get('level') not in (1,2,3,4):raise ValueError('Heading level must be 1..4')
         if b['type']=='figure' and not Path(b['path']).is_file():raise ValueError('Missing figure: '+b['path'])
+        if b['type']=='equation':
+            from equations import equation_element
+            equation_element(b)
+            if not re.fullmatch(r'\d+-\d+',str(b.get('number',''))):raise ValueError('Equation number must be chapter-index, e.g. 2-1')
+            for item in b.get('definitions',[]):
+                if not item.get('symbol') or not item.get('text'):raise ValueError('Each definition needs symbol and text')
+        if b['type']=='table':
+            rows=b.get('rows',[])
+            if len(rows)<2 or not rows[0] or any(len(r)!=len(rows[0]) for r in rows):raise ValueError('Table needs a header and rectangular data rows')
+            breaks=b.get('break_before_rows',[])
+            if not isinstance(breaks,list) or any(type(n)!=int or not 2<=n<len(rows) for n in breaks) or breaks!=sorted(set(breaks)):raise ValueError('break_before_rows must be sorted unique data-row indexes (2..len(rows)-1)')
+    for key in ('acknowledgements','conclusion'):
+        if key in data and data[key] is not None and not isinstance(data[key],str):raise ValueError(key+' must be text or null')
+    if not isinstance(data['references'],list) or any(not isinstance(x,str) or not x.strip() for x in data['references']):raise ValueError('references must contain nonempty strings')
+    evidence=data.get('evidence',[])
+    if not isinstance(evidence,list) or any(not isinstance(x,dict) or type(x.get('reference'))!=int or not 1<=x['reference']<=len(data['references']) for x in evidence):raise ValueError('evidence entries must map to existing reference numbers')
 
 def build(data,output):
     validate(data);output=Path(output)
@@ -112,6 +130,9 @@ def build(data,output):
             p=paragraph(doc,b['text'],'H'+str(b['level']))
             if first and b['level']==1:p.paragraph_format.page_break_before=False;first=False
         elif typ=='paragraph':paragraph(doc,b['text'],'Body')
+        elif typ=='equation':
+            from equations import add_equation
+            add_equation(doc,b)
         elif typ=='figure':
             width=float(b.get('width_inches',4.5))
             if not 0<width<=6.4:raise ValueError('Figure width exceeds content area')
@@ -132,7 +153,7 @@ def build(data,output):
                     for cell,w in zip(row.cells,widths):cell.width=Cm(w)
             borders=child(table._tbl.tblPr,'w:tblBorders')
             for side in ('top','bottom','left','right','insideH','insideV'):
-                child(borders,'w:'+side,val='single' if side in ('top','bottom') else 'nil',sz=8,color='000000')
+                child(borders,'w:'+side,val='single' if side in ('top','bottom') else 'nil',sz=12,color='000000')
             for i,row in enumerate(table.rows):
                 child(row._tr.get_or_add_trPr(),'w:cantSplit',val=1)
                 if i==0:child(row._tr.get_or_add_trPr(),'w:tblHeader',val=1)
@@ -143,12 +164,34 @@ def build(data,output):
                     if len(rows)<=8:p.paragraph_format.keep_with_next=i<len(rows)-1
                     margins=child(cell._tc.get_or_add_tcPr(),'w:tcMar')
                     for side in ('top','bottom'):child(margins,'w:'+side,w=65,type='dxa')
-                    if i==0:child(child(cell._tc.get_or_add_tcPr(),'w:tcBorders'),'w:bottom',val='single',sz=4,color='000000')
+                    if i==0:child(child(cell._tc.get_or_add_tcPr(),'w:tcBorders'),'w:bottom',val='single',sz=12,color='000000')
+            # Explicit row boundaries come from author input or actual Word
+            # pagination. Each continuation is a separate table with a header.
+            breaks=b.get('break_before_rows',[])
+            if breaks:
+                original_rows=list(table._tbl.tr_lst)
+                for start,end in zip(breaks,breaks[1:]+[len(rows)]):
+                    label=b.get('continuation_label')
+                    if not label:
+                        match=re.match(r'表\s*(\d+-\d+)',b['caption'])
+                        if not match:raise ValueError('Supply continuation_label for a nonstandard table caption')
+                        label='续表'+match[1]
+                    p=paragraph(doc,label,'Continuation')
+                    p.paragraph_format.page_break_before=True;p.paragraph_format.keep_with_next=True
+                    clone=deepcopy(table._tbl)
+                    for row in list(clone.tr_lst):clone.remove(row)
+                    clone.append(deepcopy(original_rows[0]))
+                    for row in original_rows[start:end]:clone.append(deepcopy(row))
+                    doc.element.body.insert(len(doc.element.body)-1,clone)
+                for row in original_rows[breaks[0]:]:table._tbl.remove(row)
     if data.get('conclusion'):
         paragraph(doc,'结论','H1')
         for part in data['conclusion'].split('\n'):
             if part.strip():paragraph(doc,part,'Body')
-    paragraph(doc,'致谢','H1');paragraph(doc,data['acknowledgements'],'Body')
+    if data.get('acknowledgements'):
+        paragraph(doc,'致谢','H1')
+        for part in data['acknowledgements'].split('\n'):
+            if part.strip():paragraph(doc,part,'Body')
     paragraph(doc,'参考文献','H1')
     for i,entry in enumerate(data['references'],1):paragraph(doc,f'[{i}] {entry}','Reference')
     for appendix in data.get('appendices',[]):

@@ -1,0 +1,49 @@
+{
+  "title_zh": "报告工具演示（非真实研究）",
+  "title_en": "Report Tool Demonstration",
+  "identity_mode": "blank",
+  "student": "",
+  "student_id": "",
+  "class": "",
+  "supervisor": "",
+  "major": "",
+  "date": "2026年11月14日",
+  "abstract_zh": "本文件仅演示报告工具的输入结构与排版功能，不包含真实实验、研究结论或可供提交的文献。正式报告须另存并替换为真实内容与来源。",
+  "abstract_en": "This example demonstrates report formatting only. It contains no real research findings or verified publication and must not be submitted as a research report.",
+  "keywords_zh": ["工具演示", "报告排版"],
+  "keywords_en": ["demonstration", "report formatting"],
+  "blocks": [
+    {"type": "heading", "level": 1, "text": "1 工具演示"},
+    {"type": "paragraph", "text": "本段仅验证引文编号与跳转功能。条目[1]明确为演示内容，不是真实出版物，正式写作时必须替换为已核实来源。"},
+    {"type": "heading", "level": 2, "text": "1.1 表格示例"},
+    {
+      "type": "table",
+      "caption": "表1-1 功能演示表",
+      "widths_cm": [4, 12.5],
+      "rows": [
+        ["功能", "演示范围"],
+        ["三线表", "验证线宽、题注与重复表头，不含实验数据"],
+        ["引文", "验证正文上标与书签跳转，不证明来源真实"],
+        ["公式", "验证原生可编辑对象与编号，不计算实际指标"]
+      ]
+    },
+    {"type": "heading", "level": 2, "text": "1.2 公式示例"},
+    {
+      "type": "equation",
+      "number": "1-1",
+      "math": ["r=", {"kind": "fraction", "num": "a", "den": "b"}],
+      "definitions": [
+        {"symbol": "r", "text": "仅为排版演示中的比值符号，不代表实际研究指标"},
+        {"symbol": "a", "text": "演示用分子符号"},
+        {"symbol": "b", "text": "演示用非零分母符号"}
+      ]
+    }
+  ],
+  "conclusion": "本输入只供运行工具与检查排版，不构成科研结论。请在正式报告中使用真实材料、条件、数据和来源。",
+  "acknowledgements": null,
+  "references": ["演示条目：不是真实出版物，仅用于测试编号与链接，正式报告不得使用。"],
+  "appendices": [],
+  "evidence": [
+    {"reference": 1, "claim": "仅演示引文跳转", "source": "演示输入，不是真实来源", "locator": "无真实页码", "scope": "只验证工具，真实性和论断支持不适用"}
+  ]
+}

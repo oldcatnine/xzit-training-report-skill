@@ -11,21 +11,10 @@ from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.text.paragraph import Paragraph
 from report_format import child
+from document_roles import discover, role, CITE, numbers
 
-CITE=re.compile(r'\[(\d+(?:\s*[-,，]\s*\d+)*)\]')
 PREFIX='xzit_ref_'
 TABLE_LINE_EIGHTHS=12  # 1.5pt: observed source sample table cell borders.
-
-def numbers(label):
-    result=[]
-    for part in re.split(r'[,，]',label.strip('[]')):
-        bounds=part.split('-')
-        if len(bounds)==1:result.append(int(bounds[0]))
-        else:
-            lo,hi=map(int,bounds)
-            if hi<lo or hi-lo>1000:raise ValueError('Invalid citation range')
-            result.extend(range(lo,hi+1))
-    return result
 
 def text_run(original,text,superscript=False):
     r=deepcopy(original)
@@ -83,11 +72,11 @@ def replace_plain_spans(p,regex,make_nodes):
         for e in nodes:parent.insert(index,e);index+=1
     return replaced
 
-def format_document(doc):
-    refs={}
-    for p in doc.paragraphs:
-        if p.style.name=='XZITReference' and (m:=re.match(r'^\[(\d+)\]',p.text.strip())):refs[int(m[1])]=p
-    if not refs:raise ValueError('No mapped bibliography entries')
+def format_document(doc,role_map=None):
+    body,refs,errors=discover(doc,role_map)
+    if errors:raise ValueError('; '.join(errors))
+    body_elements={p._p for p in body}
+    ref_elements={p._p for p in refs.values()}
     ids=[int(x) for x in doc.element.xpath('.//w:bookmarkStart/@w:id') if str(x).isdigit()]
     next_id=max(ids,default=-1)+1
     for n,p in refs.items():
@@ -98,15 +87,12 @@ def format_document(doc):
             end=OxmlElement('w:bookmarkEnd');end.set(qn('w:id'),str(next_id));next_id+=1
             p._p.insert(1 if p._p.pPr is not None else 0,start);p._p.append(end)
         elif len(existing)!=1 or existing[0].getparent() is not p._p:raise ValueError('Conflicting bibliography bookmark '+name)
-    citations=0;doi_links=0;main=False;in_refs=False
+    citations=0;doi_links=0
     for e in doc.element.body:
         ps=[e] if e.tag==qn('w:p') else e.xpath('.//w:p')
         for pe in ps:
             p=Paragraph(pe,doc);text=p.text.strip()
-            if p.style.name=='XZITH1' and re.match(r'^1\s',text):main=True
-            if p.style.name=='XZITH1' and text=='参考文献':in_refs=True
-            elif in_refs and p.style.name=='XZITH1':in_refs=False;main=False
-            if in_refs and p.style.name=='XZITReference':
+            if pe in ref_elements:
                 # Repair a previously truncated DOI link without changing text.
                 expected=re.search(r'DOI\s*:\s*(10\.\d{4,9}/\S+)',p.text,re.I)
                 expected_url='https://doi.org/'+expected[1].rstrip('.,;，。') if expected else None
@@ -123,7 +109,7 @@ def format_document(doc):
                     if len(doi)<len(m[0]):nodes.append(text_run(original,m[0][len(doi):]))
                     return nodes
                 doi_links+=replace_plain_spans(p,re.compile(r'10\.\d{4,9}/[^\s]+'),doi_node)
-            elif main and not p.style.name.lower().startswith('toc '):
+            elif pe in body_elements:
                 def citation_nodes(original,m):
                     values=numbers(m[0])
                     if any(n not in refs for n in values):raise ValueError('Citation has no bibliography entry: '+m[0])
@@ -135,7 +121,7 @@ def format_document(doc):
                         for r in link.xpath('./w:r'):child(r.get_or_add_rPr(),'w:vertAlign',val='superscript')
     table_count=0
     for table in doc.tables:
-        if not any(p.style.name=='XZITTable' for row in table.rows for cell in row.cells for p in cell.paragraphs):continue
+        if not any(role(p,role_map)=='Table' for row in table.rows for cell in row.cells for p in cell.paragraphs):continue
         table_count+=1
         borders=child(table._tbl.tblPr,'w:tblBorders')
         for side in ('top','bottom','left','right','insideH','insideV'):
@@ -150,17 +136,23 @@ def format_document(doc):
                 if i==len(table.rows)-1:child(cb,'w:bottom',val='single',sz=TABLE_LINE_EIGHTHS,color='000000')
     return {'new_citation_spans':citations,'new_doi_links':doi_links,'bibliography_entries':len(refs),'three_line_tables':table_count,'line_width_pt':TABLE_LINE_EIGHTHS/8}
 
-def audit_links(doc):
+def audit_links(doc,role_map=None):
     failures=[];links=doc.element.xpath('.//w:hyperlink[starts-with(@w:anchor,"'+PREFIX+'")]')
-    bookmarks=set(doc.element.xpath('.//w:bookmarkStart/@w:name'))
+    bookmarks=doc.element.xpath('.//w:bookmarkStart/@w:name')
     if not links:failures.append('No linked superscript citations found')
     for link in links:
         if link.get(qn('w:anchor')) not in bookmarks:failures.append('Broken citation bookmark')
+        elif bookmarks.count(link.get(qn('w:anchor')))!=1:failures.append('Duplicate citation bookmark')
+        label=''.join(link.xpath('.//w:t/text()'))
+        if not re.fullmatch(r'\[\d+\]',label) or link.get(qn('w:anchor'))!=PREFIX+label.strip('[]'):failures.append('Citation text and target disagree')
         for r in link.xpath('./w:r'):
             if not r.xpath('./w:rPr/w:vertAlign[@w:val="superscript"]'):failures.append('Citation not superscript')
     doi_count=0
-    for p in doc.paragraphs:
-        if p.style.name!='XZITReference':continue
+    body,refs,errors=discover(doc,role_map)
+    failures.extend(errors)
+    for p in body:
+        if CITE.search(''.join(p._p.xpath('./w:r/w:t/text()'))):failures.append('Unlinked citation: '+p.text[:70])
+    for p in refs.values():
         m=re.search(r'DOI\s*:\s*(10\.\d{4,9}/\S+)',p.text,re.I)
         if not m:continue
         expected='https://doi.org/'+m[1].rstrip('.,;，。')
@@ -170,7 +162,9 @@ def audit_links(doc):
     return {'status':'fail' if failures else 'pass','linked_citation_count':len(links),'complete_doi_link_count':doi_count,'failures':failures}
 
 if __name__=='__main__':
-    ap=argparse.ArgumentParser();ap.add_argument('input',type=Path);ap.add_argument('output',type=Path);a=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument('input',type=Path);ap.add_argument('output',type=Path);ap.add_argument('--role-map',type=Path);a=ap.parse_args()
     if a.output.exists():ap.error('Use a new output path')
-    d=Document(a.input);result=format_document(d);d.save(a.output)
-    result['link_audit']=audit_links(Document(a.output));print(json.dumps(result,ensure_ascii=False,indent=2))
+    mapping=json.loads(a.role_map.read_text(encoding='utf-8-sig')) if a.role_map else None
+    d=Document(a.input);result=format_document(d,mapping);d.save(a.output)
+    result['link_audit']=audit_links(Document(a.output),mapping);print(json.dumps(result,ensure_ascii=False,indent=2))
+    raise SystemExit(result['link_audit']['status']=='fail')

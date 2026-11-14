@@ -6,6 +6,7 @@ from docx.text.paragraph import Paragraph
 from docx.text.run import Run
 from docx.oxml.ns import qn
 from report_format import ROLES
+from document_roles import role as paragraph_role
 
 def merge(props,element):
     if element is None:return
@@ -63,7 +64,7 @@ def audit(path,role_map=None):
         where=f'paragraph {i}: '+text[:45]
         if re.search(r'错误\s*[!！]|Error!|未定义书签|目录待更新|×{2,}|待补[：:]|格式说明',text,re.I):error('C',where,'Unresolved placeholder or field error')
         name=p.style.name
-        role=role_map.get(name,name[4:] if name.startswith('XZIT') else None)
+        role=paragraph_role(p,role_map)
         toc_match=re.fullmatch(r'toc ([123])',name,re.I)
         if toc_match:role='TOC'+toc_match.group(1)
         if role not in ROLES:
@@ -104,6 +105,31 @@ def audit(path,role_map=None):
                 if bold!=(r.text.strip()==label):error('F07/F10',where,'Only keyword label may be bold (label must be separate run)')
     for role in ('CoverZH','CoverEN','AbstractZH','AbstractEN','KeywordsZH','KeywordsEN','H1','Reference'):
         if role not in roles_seen:error('structure','document','Missing or unmapped role: '+role)
+    for index,table in enumerate(doc.tables,1):
+        if not any(paragraph_role(p,role_map)=='Table' for row in table.rows for cell in row.cells for p in cell.paragraphs):continue
+        where=f'table {index}'
+        header=table.rows[0]._tr.find(qn('w:trPr'))
+        if header is None or header.find(qn('w:tblHeader')) is None:error('F19',where,'Missing repeating header')
+        tb=table._tbl.tblPr.find(qn('w:tblBorders'))
+        for i,row in enumerate(table.rows):
+            for cell in row.cells:
+                cb=cell._tc.get_or_add_tcPr().find(qn('w:tcBorders'))
+                for side in ('top','bottom','left','right'):
+                    element=cb.find(qn('w:'+side)) if cb is not None else None
+                    # Explicit nil overrides table-level borders only for cell
+                    # borders; the outer table border remains separately active.
+                    expected=(side=='top' and i==0) or (side=='bottom' and (i==0 or i==len(table.rows)-1))
+                    if expected and (element is None or element.get(qn('w:val'))!='single' or element.get(qn('w:sz'))!='12'):error('F18',where,'Required cell line must be 1.5pt: '+side)
+                    if not expected and element is not None and element.get(qn('w:val')) not in ('nil','none'):error('F18',where,'Unexpected cell border: '+side)
+        if tb is not None:
+            for side in ('top','bottom','left','right','insideH','insideV'):
+                element=tb.find(qn('w:'+side))
+                if element is None:continue
+                if side in ('top','bottom'):
+                    if element.get(qn('w:val'))!='single' or element.get(qn('w:sz'))!='12':error('F18',where,'Outer line must be 1.5pt')
+                elif element.get(qn('w:val')) not in ('nil','none'):error('F18',where,'Unexpected table border: '+side)
+    for p in doc.paragraphs:
+        if paragraph_role(p,role_map)=='Equation' and not p._p.xpath('.//m:oMath'):error('F20','equation '+p.text,'Missing editable OMML equation')
     manual=[
       'Render every page: cover, fonts, breaks, header/footer and page numbering.',
       'Verify all factual claims, references, citation order and real training evidence.',
