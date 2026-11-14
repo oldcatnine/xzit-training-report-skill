@@ -2,6 +2,8 @@
 
 需要完整操作步骤、演示输入、全部参数与排错时，阅读[详细使用文档](usage-guide.md)。本页保留入口速查。
 
+处理现有报告先遵循[首轮方式选择](first-turn-dialog.md)。统一入口会修复引文和表线，即使未加`--normalize`也不是只读检查；选择“仅检查”或尚待方案确认时，使用独立审计工具。
+
 依赖Python 3.10+、python-docx和lxml。Word分页/导出要求Windows及已安装Microsoft Word；渲染PNG还需PATH中的Poppler `pdftoppm`。不自动安装依赖或上传内容。
 
 ## 生成

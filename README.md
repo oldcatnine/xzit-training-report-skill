@@ -6,6 +6,8 @@
 
 配套：[可运行演示输入](skills/artifact-template-xzit-training-report/examples/report-input.json) · [输入字段规范](skills/artifact-template-xzit-training-report/references/input-schema.md) · [验证记录](VALIDATION.md)。演示内容及文献均非真实研究，不能直接提交。
 
+处理现有报告且尚未明确操作方式时，首轮先选择：**1 仅检查格式、2 直接修改副本并检查、3 先检查方案再确认修改**。已明确的选择不重复询问；未选择不默认修改。详见[首轮提示及范围](skills/artifact-template-xzit-training-report/references/first-turn-dialog.md)。
+
 ## 使用
 
 将 `skills/artifact-template-xzit-training-report` 放进个人技能目录（Codex：`~/.codex/skills/`），重新加载后输入：
