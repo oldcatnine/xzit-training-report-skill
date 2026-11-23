@@ -4,6 +4,10 @@
 
 ⭐ 如果喜欢，请给我一颗星！
 
+想让 AI 代你加星？复制这句话发给已连接 GitHub 的 AI 助手：
+
+> 我同意用自己当前登录的 GitHub 账号，为 `oldcatnine/xzit-training-report-skill` 加一颗星。请先检查是否已经加星，未加星时再执行，完成后告诉我结果。如果无法操作，请给我仓库链接。
+
 **[详细使用文档](skills/artifact-template-xzit-training-report/references/usage-guide.md)**：环境准备、自然语言调用、完整示例、全部命令参数、旧稿映射、公式、续表、输出解释与常见问题。
 
 配套：[可运行演示输入](skills/artifact-template-xzit-training-report/examples/report-input.json) · [输入字段规范](skills/artifact-template-xzit-training-report/references/input-schema.md) · [验证记录](VALIDATION.md)。演示内容及文献均非真实研究，不能直接提交。
