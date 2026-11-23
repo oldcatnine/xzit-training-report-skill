@@ -2,7 +2,7 @@
 
 需要完整操作步骤、演示输入、全部参数与排错时，阅读[详细使用文档](usage-guide.md)。本页保留入口速查。
 
-处理现有报告先遵循[首轮方式选择](first-turn-dialog.md)。统一入口会修复引文和表线，即使未加`--normalize`也不是只读检查；选择“仅检查”或尚待方案确认时，使用独立审计工具。
+处理现有报告先遵循[首轮方式选择](first-turn-dialog.md)。选择“仅检查”或尚待方案确认时，使用 `python scripts/report_pipeline.py existing.docx audit-output --check-only`，得到 `inspection.md` 与 `inspection.json`。可加 `--role-map`、`--course-rules` 和 `--min-references`。省略 `--check-only` 时，即使未加 `--normalize` 也会修复引文和表线。
 
 依赖Python 3.10+、python-docx和lxml。Word分页/导出要求Windows及已安装Microsoft Word；渲染PNG还需PATH中的Poppler `pdftoppm`。不自动安装依赖或上传内容。
 

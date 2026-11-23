@@ -8,6 +8,8 @@
 
 处理现有报告且尚未明确操作方式时，首轮先选择：**1 仅检查格式、2 直接修改副本并检查、3 先检查方案再确认修改**。已明确的选择不重复询问；未选择不默认修改。详见[首轮提示及范围](skills/artifact-template-xzit-training-report/references/first-turn-dialog.md)。
 
+统一入口支持 `--check-only` 输出只读审计与修改建议，修复旧稿时比较正文、表格、图片、公式保全情况。Word 导出后可核对 PDF 页码与目录落页。任务可选提供带依据的字号覆盖、Pandoc LaTeX 公式转换或 Crossref DOI 核对。中文新稿会处理数字前的多余空格及 Word 自动间距。详见[使用文档](skills/artifact-template-xzit-training-report/references/usage-guide.md#检查保全与联网选项)。
+
 ## 使用
 
 将 `skills/artifact-template-xzit-training-report` 放进个人技能目录（Codex：`~/.codex/skills/`），重新加载后输入：
@@ -20,7 +22,7 @@
 
 ## 内容
 
-正文引文现自动设置为可跳转的右上角上标；文后DOI使用完整超链接。正文三线表按保留范本使用1.5磅线条。现有报告可运行`scholarly_format.py input.docx output.docx`修正；Word小黑方点先按非打印格式标记检查，不删除分页设置。文字需逐段审读，少用套话与空泛自我说明。
+正文引文自动合并为 `[1,3]` 或 `[1-3]` 等紧凑上标，并保留显示编号的跳转。文后参考文献省略 DOI，英文作者使用常规姓名大小写。正文三线表上下线各 1.5 磅，表头下线 0.5 磅。整理现有报告可运行 `scholarly_format.py input.docx output.docx`。
 
 - [格式与证据](skills/artifact-template-xzit-training-report/references/format-requirements.md)：23项明确格式规则与实际版式观测值。
 - [文献工作流](skills/artifact-template-xzit-training-report/references/literature-workflow.md)：学习三份用户范文的结构，支持光伏回收及寿命预测任务。
@@ -30,7 +32,7 @@
 - `audit_docx.py`：检查实际生效格式、节设置、关键词和残留占位；机器检查不代替引文核验与逐页视觉验收。
 - `refresh_fields.ps1`：用 Windows Word 更新字段，另存DOCX和PDF。
 
-依赖 Python 3.10+、python-docx、lxml，安装见 `requirements.txt`。从仓库根目录运行：
+依赖 Python 3.10+、python-docx、lxml 和 pypdf，安装见 `requirements.txt`。从仓库根目录运行：
 
 ```sh
 python -m unittest discover -s skills/artifact-template-xzit-training-report/tests -v

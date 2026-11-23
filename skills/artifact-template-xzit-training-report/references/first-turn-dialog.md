@@ -43,7 +43,7 @@
 
 ## 工具使用边界
 
-仅检查及方式3尚未获方案确认时，用`audit_docx.py`、`audit_citations.py`及只读链接检查。`report_pipeline.py`即使没有`--normalize`仍可能改引文和表线，不能当作仅检查工具；`normalize_report.py`、`scholarly_format.py`均为修复工具。
+仅检查及方式3尚未获方案确认时，用 `report_pipeline.py 原稿.docx 新检查目录 --check-only` 汇总格式、引文、链接和建议样式映射。交付 `inspection.md` 和 `inspection.json`。也可单独运行只读审计。统一入口省略 `--check-only` 时会修复引文和表线，不能用于只读检查。建议样式映射为待确认项。
 
 需要渲染时可在隔离临时副本中操作，不覆盖源文件、不交付已修复稿。先记录原文件的字段/目录状态；若渲染引擎重算了字段，应说明预览副本与原始缓存的差异，不能用预览掩盖原稿未更新问题。不为只读检查保存源报告或调用修复流程。
 

@@ -4,6 +4,7 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 CITE = re.compile(r'\[(\d+(?:\s*[-,，]\s*\d+)*)\]')
+CITE_GROUP = re.compile(CITE.pattern + r'(?:[ \t]*' + CITE.pattern + r')*')
 
 
 def role(p, mapping=None):
@@ -74,3 +75,59 @@ def numbers(label):
             raise ValueError('Invalid citation range: ' + label)
         result.extend(range(lo, hi + 1))
     return result
+
+
+def citation_numbers(text):
+    return [number for match in CITE.finditer(text) for number in numbers(match[0])]
+
+
+def citation_label(values):
+    values = sorted(set(values))
+    parts = []
+    i = 0
+    while i < len(values):
+        end = i
+        while end+1 < len(values) and values[end+1] == values[end]+1:
+            end += 1
+        if end-i >= 2:
+            parts.append(f'{values[i]}-{values[end]}')
+        else:
+            parts.extend(str(n) for n in values[i:end+1])
+        i = end+1
+    return '[' + ','.join(parts) + ']'
+
+
+def suggest_roles(doc, mapping=None):
+    """Suggest per-paragraph roles and only offer homogeneous style mappings."""
+    groups = {}
+    for index, p in enumerate(paragraphs(doc), 1):
+        text = p.text.strip()
+        if not text or role(p, mapping):
+            continue
+        name = p.style.name
+        suggestion, reason = None, 'Insufficient structural evidence'
+        if re.match(r'^续表\s*\d+[-–.]\d+', text):
+            suggestion, reason = 'Continuation', 'Numbered continuation label'
+        elif re.match(r'^[图表]\s*\d+[-–.]\d+(?:\s|[\u3400-\u9fff])', text):
+            suggestion, reason = 'Caption', 'Numbered figure/table caption'
+        elif p._p.xpath('.//m:oMath'):
+            if re.fullmatch(r'\(\d+-\d+\)', text):
+                suggestion, reason = 'Equation', 'Native math object and equation number'
+        elif p._p.xpath('ancestor::w:tc'):
+            suggestion, reason = 'Table', 'Inside a table cell; exclude cover metadata before mapping'
+        else:
+            props = [p._p.pPr, p.style.element.find(qn('w:pPr'))]
+            levels = [level.get(qn('w:val')) for pr in props if pr is not None
+                      for level in pr.findall(qn('w:outlineLvl'))]
+            if levels and levels[0] in ('0','1','2','3'):
+                suggestion, reason = f'H{int(levels[0])+1}', 'Explicit Word outline level'
+            elif len(text) <= 55 and (match := re.match(r'^(\d+(?:\.\d+){1,3})\s+\S',text)):
+                suggestion, reason = f'H{match[1].count(".")+1}', 'Numbered outline pattern'
+        groups.setdefault(name, []).append({'paragraph':index,'preview':text[:100],
+            'role':suggestion,'reason':reason})
+    proposed = {}
+    for name, items in groups.items():
+        kinds = {item['role'] for item in items}
+        if len(kinds) == 1 and kinds.isdisjoint({None,'Table'}):
+            proposed[name] = items[0]['role']
+    return {'proposed_role_map':proposed,'unmapped_styles':groups,'status':'pending' if groups else 'not_applicable'}

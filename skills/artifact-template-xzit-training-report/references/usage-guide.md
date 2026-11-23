@@ -28,7 +28,7 @@
 | 已准备全部内容，生成Word | JSON + `report_pipeline.py` | 封面、摘要、目录域、正文、图表、公式、文献；可选Word更新及PDF/PNG |
 | 整理已有报告 | DOCX + 样式映射 + `--normalize` | 已识别段落格式、引文链接与已映射正文表格 |
 | 只检查，不修改 | `audit_docx.py`、`audit_citations.py` | 输出检查记录，输入文件不变 |
-| 只修引文链接和表线 | `scholarly_format.py` | 上标引文、文献跳转、DOI链接和已识别正文三线表 |
+| 只修引文、文献表和表线 | `scholarly_format.py` | 合并上标引文、文献跳转、作者大小写、移除 DOI、已识别正文三线表 |
 
 脚本消费准备好的内容，不会自行检索文献、阅读全文或根据题目生成科学结论。内容写作、原文证据判断和逐页验收由调用技能的助手或作者完成。
 
@@ -50,7 +50,7 @@
 
 ### 运行条件
 
-- Python 3.10+；依赖`python-docx>=1.1,<2`和`lxml>=5,<7`。
+- Python 3.10+。运行 `pip install -r requirements.txt` 安装 python-docx、lxml 和 PDF 审计所用的 pypdf。
 - `--word`要求Windows及可通过COM正常启动的Microsoft Word。
 - `--render`要求Poppler的`pdftoppm`位于PATH，且同时启用`--word`。
 - 主要字体为宋体、黑体、Times New Roman和Arial；公式及字体替换仍需在最终Word/PDF核对。
@@ -128,6 +128,21 @@ python scripts/report_pipeline.py my-report.json report-output-v1 --word --auto-
 
 ## 统一入口参数
 
+### 检查、保全与联网选项
+
+```powershell
+python scripts/report_pipeline.py existing.docx audit-v1 --check-only --min-references 10
+python scripts/report_pipeline.py existing.docx repaired-v1 --role-map roles.json --normalize --word
+```
+
+`--check-only` 只写 `inspection.md` 与 `inspection.json`，同时核对源文件哈希。不与 Word、渲染或修复选项混用。样式建议含预览、段落位置和依据，可能存在待核角色。确认后可将合适的建议写入 `roles.json`。必要时使用 `--course-rules course.json` 指定按角色覆盖的字号，例如 `{"Body":{"size_pt":12.5,"source":"课程任务书第2页"}}`。修整旧稿时须同时提供 `--normalize` 和显式角色映射。生成和审计使用相同的覆盖规则。
+
+旧稿修复在格式调整后及 Word 另存后比较正文、表格、图片与公式。发现差异时输出 `run.json` 中的首处差异与阶段，修复候选保留为中间稿。PDF 核对结果见 `checks.json` 的 `pdf`，检查印刷页码的连续性与目录标题实际落页。重复标题或无法提取的页码标待核。
+
+用户希望联网对照时，可加 `--crossref`。工具只向 Crossref 传文献的 DOI，核对题名、首位作者姓氏与年份，并记录缺项、未匹配及查询失败。文献能否支持报告论断依然需要读原文。
+
+新稿数字间距修正及可选 LaTeX 片段用法见[输入规范](input-schema.md)。
+
 | 参数 | 默认值 | 含义与限制 |
 |---|---|---|
 | `input` | 必填 | UTF-8 JSON内容文件或已有DOCX |
@@ -139,6 +154,9 @@ python scripts/report_pipeline.py my-report.json report-output-v1 --word --auto-
 | `--render` | 关闭 | PDF渲染为PNG，要求`--word`和pdftoppm |
 | `--role-map PATH` | 无 | DOCX原段落样式名到角色名的JSON映射 |
 | `--normalize` | 关闭 | 按角色整理DOCX，要求显式`--role-map` |
+| `--check-only` | 关闭 | 只读检查 DOCX，输出问题与拟修复清单 |
+| `--course-rules PATH` | 无 | JSON 课程字号覆盖，记录规则出处 |
+| `--crossref` | 关闭 | 向 Crossref 查询原始 DOCX 或 JSON 输入中的 DOI |
 
 `--normalize`与样式映射面向DOCX；JSON稿由生成器直接使用本技能样式，应省略这些旧稿选项。
 
@@ -163,7 +181,7 @@ Word子进程仅对本技能脚本使用进程级ExecutionPolicy Bypass，不修
 
 普通模式五项身份必须非空。明确选择手填时，设置`identity_mode: blank`并将五项全部显式传空字符串，不省略、不混填。不能虚构身份或经历。
 
-标题、图表题、公式编号由调用者按章填写，脚本不会推断科研结构或统一自动重编号。目录仅到三级，四级标题不进入目录。章及结尾部分另起新页；前置罗马页码，正文从阿拉伯1开始；保留范本封面的罗马页码。
+标题、图表题、公式编号由调用者按章填写。目录显示至三级，章及结尾部分另起新页。封面不显示页码，第二页（中文摘要）从大写罗马数字 I 开始，正文从阿拉伯数字 1 开始。英文摘要正文使用两端对齐，Abstract 标题居中。
 
 ## 可编辑公式
 
@@ -182,13 +200,13 @@ Word子进程仅对本技能脚本使用进程级ExecutionPolicy Bypass，不修
 
 支持字符串列表及节点嵌套，最大深度32。编号输入`2-1`，显示`(2-1)`；制表位使公式居中、编号靠右。释义用制表位和悬挂缩进对齐，复杂符号转行须看实际页面。
 
-矩阵、积分等可用单个带命名空间的`m:oMath` XML字符串传给`omml`；拒绝DTD、实体和无关文档内容。不自动转换LaTeX，不以截图代替要求可编辑的公式。
+矩阵、积分等可用单个带命名空间的 `m:oMath` XML 字符串传给 `omml`。如果 PATH 已配置 Pandoc，也可通过 `latex` 字段提供单行数学片段。见[输入规范](input-schema.md#可编辑公式)。
 
 默认DOCX兼容级别15。若Word保存时提示公式会转换成图片，应取消并检查兼容模式，不盲目继续。
 
 ## 表格和续表
 
-三线表上边线、表头下横线、下边线均为1.5磅，无竖线及其他内部横线；封面身份栏不套用此处理。表题在上，图题在下。
+三线表上下边线各 1.5 磅，表头下线 0.5 磅。数据行之间和表格左右两侧留白。封面身份栏沿用其专用格式。表题在上，图题在下。
 
 `widths_cm`列数与表格列数相同，各列为正，总宽不超过16.5cm；未传则自动调整。短表尽量同页，实际高度必须核对。
 
@@ -230,13 +248,13 @@ python scripts/report_pipeline.py existing.docx report-repaired-v1 --role-map ro
 
 工具不重建旧稿封面、不自动修正全部节的页边距、不猜测未知段落。封面、分节及页码偏差仍须根据检查另行修复。未加`--normalize`时主要处理引文链接、上标和已识别表线，再做检查，不全篇重排。
 
-只检查时使用后文独立审计命令，避免将修复命令误当只读操作。
+只检查时使用统一入口的 `--check-only`，或后文独立审计命令。
 
 ## 参考文献与证据记录
 
-正文支持`[1]`、`[1,2]`、`[1-3]`，生成黑色、无下划线的上标跳转；组合引文可能展开为`[1][2][3]`。文后编号保持基线。文献数组按首次引用顺序排列；同一条多次引用只算一篇。
+正文引用生成黑色、无下划线的上标跳转。文后编号保持基线。文献数组按首次引用顺序排列，同一条多次引用只算一篇。
 
-检查编号连续性、缺失与未引条目、首次引用顺序及部分重复DOI。DOI建议写完整`DOI:10.xxxx/……`，生成对应doi.org链接；其真伪及归属仍须核对出版页。
+相邻引文 `[1][3]` 显示为 `[1,3]`，连续三条及以上压缩为区间，如 `[1,2,3]` 显示为 `[1-3]`。显示的编号保留跳转，区间内编号也纳入缺引检查。参考文献列表省略 DOI 和 DOI 跳转。英文作者用常规大小写，例如 `MARTÍNEZ M` 写成 `Martínez M`。核对用的 DOI 可来自原始文献或输入数据。
 
 证据线索：
 
@@ -312,7 +330,7 @@ python -m unittest discover -s tests -v
 | `Uncited bibliography` | 根据内容补真实引用或删无关条目，然后重新编号 |
 | 引文缺对应条目 | 核对正文与文后编号，不通过虚构条目消除错误 |
 | 自动续表未稳定或单行过高 | 合理重组超高行、处理版式，不删数据或缩字号冒充通过 |
-| LaTeX显示为普通字符串 | math不解释LaTeX，使用结构节点或正确OMML |
+| LaTeX显示为普通字符串 | 公式 `math` 字段按原文显示。用 `latex` 字段和 Pandoc 转换，或提供结构节点或正确 OMML |
 | 标题前小黑方点 | 先查看是否非打印分页标记及PDF，不删章前分页/与下段同页设置 |
 | 机器通过仍待核 | 阅读来源、查看全部页面并独立记录真实复核结果 |
 

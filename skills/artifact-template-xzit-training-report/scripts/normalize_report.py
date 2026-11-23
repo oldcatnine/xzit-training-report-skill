@@ -7,7 +7,7 @@ from document_roles import paragraphs, role, discover
 from report_format import ROLES, install_styles
 
 
-def normalize(doc, mapping):
+def normalize(doc, mapping, overrides=None):
     _, references, _ = discover(doc,mapping)
     ref_elements={p._p for p in references.values()}
     assignments = []
@@ -16,7 +16,7 @@ def normalize(doc, mapping):
         if p._p in ref_elements:kind='Reference'
         elif re.fullmatch(r'(?:\d+[.、\s]*)?(?:参考文献|References|Bibliography)',p.text.strip(),re.I):kind='H1'
         assignments.append((p,kind))
-    install_styles(doc)
+    install_styles(doc, overrides)
     changed, unknown = 0, []
     for p, kind in assignments:
         if kind not in ROLES:

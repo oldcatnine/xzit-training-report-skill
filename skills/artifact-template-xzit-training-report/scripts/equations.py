@@ -1,4 +1,9 @@
 """Small native OMML builder. No evaluation of formula text or external conversion."""
+from functools import lru_cache
+from io import BytesIO
+import subprocess
+import shutil
+from zipfile import ZipFile, BadZipFile
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.enum.text import WD_TAB_ALIGNMENT
@@ -30,9 +35,33 @@ def math_node(value, depth=0):
     return [node]
 
 
+@lru_cache(maxsize=64)
+def convert_latex(expression):
+    executable = shutil.which('pandoc')
+    if not executable:
+        raise ValueError('LaTeX equations require Pandoc on PATH')
+    if not expression.strip() or len(expression) > 10000 or '$' in expression or '\n' in expression or '\r' in expression:
+        raise ValueError('Supply one LaTeX math fragment without delimiters or line breaks')
+    try:
+        output = subprocess.run([executable,'--sandbox','-f','markdown','-t','docx','-o','-'],
+            input=('$$'+expression+'$$\n').encode('utf-8'),capture_output=True,check=True,timeout=30)
+        with ZipFile(BytesIO(output.stdout)) as archive:
+            root = etree.fromstring(archive.read('word/document.xml'))
+    except (subprocess.SubprocessError,OSError,BadZipFile,KeyError,etree.XMLSyntaxError) as error:
+        raise ValueError('Pandoc could not convert the LaTeX fragment') from error
+    objects = list(root.iter(qn('m:oMath')))
+    if len(objects) != 1 or root.xpath('//*[local-name()="drawing" or local-name()="pict"]'):
+        raise ValueError('Pandoc did not return exactly one editable math object')
+    return etree.tostring(objects[0],encoding='unicode')
+
+
 def equation_element(block):
-    if ('math' in block) == ('omml' in block):
-        raise ValueError('Equation requires exactly one of math or omml')
+    if sum(key in block for key in ('math','omml','latex')) != 1:
+        raise ValueError('Equation requires exactly one of math, omml or latex')
+    if 'latex' in block:
+        if not isinstance(block['latex'],str):
+            raise ValueError('latex must be a string')
+        block = {'omml':convert_latex(block['latex'])}
     if 'omml' in block:
         raw = block['omml']
         if not isinstance(raw, str) or '<!DOCTYPE' in raw.upper() or '<!ENTITY' in raw.upper():

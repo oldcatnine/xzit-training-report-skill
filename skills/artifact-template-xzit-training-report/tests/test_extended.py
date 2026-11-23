@@ -83,7 +83,7 @@ class ExtendedTests(unittest.TestCase):
         self.assertEqual(audit_refs(path)['status'],'fail')
     def test_border_damage_detected(self):
         path,doc=self.generate();line=doc.tables[-1].cell(0,0)._tc.xpath('./w:tcPr/w:tcBorders/w:bottom')[0]
-        line.set(qn('w:sz'),'4');doc.save(path)
+        line.set(qn('w:sz'),'12');doc.save(path)
         self.assertTrue(any(x['rule']=='F18' for x in audit(path)['failures']))
     def test_unlinked_and_wrong_target_citation_detected(self):
         _,doc=self.generate();p=next(p for p in doc.paragraphs if p.style.name=='XZITBody')

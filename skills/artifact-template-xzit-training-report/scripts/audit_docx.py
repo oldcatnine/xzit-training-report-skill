@@ -5,8 +5,9 @@ from docx import Document
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
 from docx.oxml.ns import qn
-from report_format import ROLES
+from report_format import format_roles
 from document_roles import role as paragraph_role
+from scholarly_format import TABLE_OUTER_EIGHTHS, TABLE_HEADER_EIGHTHS
 
 def merge(props,element):
     if element is None:return
@@ -38,20 +39,35 @@ def effective(p,run=None):
         merge(rp,run._r.find(qn('w:rPr')))
     return pp,rp
 
-def audit(path,role_map=None):
+def audit(path,role_map=None,overrides=None):
     doc=Document(path);fail=[];unknown=[];checked=0
-    def error(rule,where,detail):fail.append({'rule':rule,'location':where,'detail':detail})
+    roles = format_roles(overrides)
+    def error(rule,where,detail,actual=None,expected=None,fixable=False,source=None):
+        fail.append({'rule':rule,'location':where,'detail':detail,'actual':actual,
+                     'expected':expected,'fixable':fixable,'severity':'error',
+                     'source':source or 'format-requirements.md'})
     role_map=role_map or {}
     for i,sec in enumerate(doc.sections,1):
         for name,target in [('page_width',11906),('page_height',16838),('top_margin',1418),('bottom_margin',1418),('left_margin',1418),('right_margin',1134),('header_distance',851),('footer_distance',851),('gutter',0)]:
             value=getattr(sec,name)
-            if value is None or abs(value.twips-target)>2:error('O01-O03',f'section {i}',name+' differs from retained reference')
+            if value is None or abs(value.twips-target)>2:
+                error('O01-O03',f'section {i}',name+' differs from retained reference',
+                      value.twips if value is not None else None,target)
     if len(doc.sections)!=3:error('O04','sections','Expected retained three-section structure; review explicit deviations')
     else:
         for i,expected in enumerate(('upperRoman','upperRoman','decimal')):
             x=doc.sections[i]._sectPr.find(qn('w:pgNumType'))
             if x is None or x.get(qn('w:fmt'),'decimal')!=expected:error('O04',f'section {i+1}','Page number format mismatch')
+            if i==0 and x is not None and x.get(qn('w:start'))!='0':error('O04','section 1','Hidden cover must count as zero so page two is Roman I')
             if i==2 and x is not None and x.get(qn('w:start'))!='1':error('O04','section 3','Main body must restart at 1')
+    cover = doc.sections[0]
+    for region in ('header','footer'):
+        story = getattr(cover, ('first_page_' if cover.different_first_page_header_footer else '') + region)
+        if story.is_linked_to_previous:
+            continue
+        instructions = story._element.xpath('.//w:instrText/text() | .//w:fldSimple/@w:instr')
+        if any(re.match(r'^\s*PAGE\b',instruction,re.I) for instruction in instructions):
+            error('O04','cover '+region,'Cover page number must be hidden','visible PAGE field','no page number')
     root=doc.element
     if root.xpath('.//w:txbxContent'):error('C','document','Instruction/floating textboxes remain; inspect each')
     if root.xpath('.//wp:anchor'):error('F22','document','Floating image/shape found; inspect and convert figures to inline')
@@ -67,31 +83,46 @@ def audit(path,role_map=None):
         role=paragraph_role(p,role_map)
         toc_match=re.fullmatch(r'toc ([123])',name,re.I)
         if toc_match:role='TOC'+toc_match.group(1)
-        if role not in ROLES:
+        if role not in roles:
             # Field-generated TOC entries have their own controlled styles.
             if not re.fullmatch(r'TOC [123]',name,re.I):unknown.append(where+' [style='+name+']')
             continue
         checked+=1;roles_seen.add(role)
-        font,size,line,indent,align,outline=ROLES[role];pp,_=effective(p)
+        font,size,line,indent,align,outline=roles[role];pp,_=effective(p)
         spacing=pp.get('spacing',{});ind=pp.get('ind',{})
         expected_line='400' if line=='exact' else '240';expected_rule='exact' if line=='exact' else 'auto'
-        if spacing.get('line','240')!=expected_line or spacing.get('lineRule','auto')!=expected_rule:error('F-line',where,'Expected '+line+' spacing')
+        if spacing.get('line','240')!=expected_line or spacing.get('lineRule','auto')!=expected_rule:
+            error('F-line',where,'Line spacing', [spacing.get('line','240'),spacing.get('lineRule','auto')],
+                  [expected_line,expected_rule],True)
         first=ind.get('firstLineChars')
         if first is not None:
-            if int(first)!=(200 if indent else 0):error('F-indent',where,'Incorrect character first-line indent')
-        elif int(ind.get('firstLine','0'))!=int(indent*20):error('F-indent',where,'Incorrect first-line indent')
-        if pp.get('jc',{}).get('val')!=align:error('F-align',where,'Expected '+align)
+            if int(first)!=(200 if indent else 0):
+                error('F-indent',where,'First-line indent (hundredths of a character)',
+                      int(first),200 if indent else 0,True)
+        elif int(ind.get('firstLine','0'))!=int(indent*20):
+            error('F-indent',where,'First-line indent (pt)',int(ind.get('firstLine','0'))/20,indent,True)
+        actual_alignment = pp.get('jc',{}).get('val')
+        if actual_alignment!=align:error('F-align',where,'Paragraph alignment',actual_alignment,align,True)
         if outline is not None:
-            if pp.get('outlineLvl',{}).get('val')!=str(outline):error('F13-F16',where,'Incorrect outline level')
-            if spacing.get('beforeLines')!='50' or spacing.get('afterLines')!='50':error('F13-F16',where,'Heading needs 0.5 LINE before and after')
+            actual_level = pp.get('outlineLvl',{}).get('val')
+            if actual_level!=str(outline):
+                error('F13-F16',where,'Word outline level (zero-indexed)',actual_level,str(outline),True)
+            if spacing.get('beforeLines')!='50' or spacing.get('afterLines')!='50':
+                error('F13-F16',where,'Spacing before/after (hundredths of a line)',
+                      [spacing.get('beforeLines'),spacing.get('afterLines')],['50','50'],True)
         for relement in p._p.xpath('./w:r | ./w:hyperlink/w:r'):
             r=Run(relement,p)
             if not r.text.strip():continue
             _,rp=effective(p,r);rf=rp.get('rFonts',{})
-            if rp.get('sz',{}).get('val')!=str(int(size*2)):error('F-font',where,'Incorrect effective font size')
-            if re.search(r'[\u3400-\u9fff]',r.text) and rf.get('eastAsia')!=font:error('F-font',where,'Incorrect effective Chinese font')
+            actual_size = rp.get('sz',{}).get('val')
+            if actual_size!=str(int(size*2)):
+                error('F-font',where,'Font size (pt)',int(actual_size)/2 if actual_size and actual_size.isdecimal() else actual_size,
+                      size,True,(overrides or {}).get(role,{}).get('source'))
+            if re.search(r'[\u3400-\u9fff]',r.text) and rf.get('eastAsia')!=font:
+                error('F-font',where,'Chinese font',rf.get('eastAsia'),font,True)
             latin=font if font in ('Arial','Times New Roman') else 'Times New Roman'
-            if re.search('[A-Za-z]',r.text) and rf.get('ascii')!=latin:error('F-font',where,'Incorrect effective Latin font')
+            if re.search('[A-Za-z0-9]',r.text) and rf.get('ascii')!=latin:
+                error('F-font',where,'Latin/digit font',rf.get('ascii'),latin,True)
             if role=='AbstractTitleEN' and rp.get('b',{}).get('val','1') in ('0','false','off'):error('F08',where,'Abstract title must be bold')
         if role=='CoverEN' and text!=text.upper():error('F03',where,'English title not uppercase')
         if role in ('KeywordsZH','KeywordsEN'):
@@ -119,14 +150,17 @@ def audit(path,role_map=None):
                     # Explicit nil overrides table-level borders only for cell
                     # borders; the outer table border remains separately active.
                     expected=(side=='top' and i==0) or (side=='bottom' and (i==0 or i==len(table.rows)-1))
-                    if expected and (element is None or element.get(qn('w:val'))!='single' or element.get(qn('w:sz'))!='12'):error('F18',where,'Required cell line must be 1.5pt: '+side)
+                    width = TABLE_HEADER_EIGHTHS if i==0 and side=='bottom' and len(table.rows)>1 else TABLE_OUTER_EIGHTHS
+                    if expected and (element is None or element.get(qn('w:val'))!='single' or element.get(qn('w:sz'))!=str(width)):
+                        error('F18',where,f'Required cell line must be {width/8:g}pt: {side}')
                     if not expected and element is not None and element.get(qn('w:val')) not in ('nil','none'):error('F18',where,'Unexpected cell border: '+side)
         if tb is not None:
             for side in ('top','bottom','left','right','insideH','insideV'):
                 element=tb.find(qn('w:'+side))
                 if element is None:continue
                 if side in ('top','bottom'):
-                    if element.get(qn('w:val'))!='single' or element.get(qn('w:sz'))!='12':error('F18',where,'Outer line must be 1.5pt')
+                    if element.get(qn('w:val'))!='single' or element.get(qn('w:sz'))!=str(TABLE_OUTER_EIGHTHS):
+                        error('F18',where,f'Outer line must be {TABLE_OUTER_EIGHTHS/8:g}pt')
                 elif element.get(qn('w:val')) not in ('nil','none'):error('F18',where,'Unexpected table border: '+side)
     for p in doc.paragraphs:
         if paragraph_role(p,role_map)=='Equation' and not p._p.xpath('.//m:oMath'):error('F20','equation '+p.text,'Missing editable OMML equation')

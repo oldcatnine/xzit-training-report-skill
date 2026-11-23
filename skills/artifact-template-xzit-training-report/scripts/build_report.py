@@ -9,13 +9,16 @@ from docx.shared import Inches
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-from report_format import install_styles,paragraph,field,child
+from report_format import install_styles,paragraph,field,child,disable_auto_spacing,hide_cover_page_number
+from scholarly_format import TABLE_OUTER_EIGHTHS, TABLE_HEADER_EIGHTHS, format_document
 
 ROOT=Path(__file__).resolve().parents[1]
 
 def validate(data):
     required=('title_zh','title_en','student','student_id','class','supervisor','major','date','abstract_zh','abstract_en','keywords_zh','keywords_en','blocks','references')
     if not isinstance(data,dict):raise ValueError('Input must be a JSON object')
+    if type(data.get('preserve_numeric_spaces',False)) is not bool:
+        raise ValueError('preserve_numeric_spaces must be a boolean')
     if data.get('identity_mode','required') not in ('blank','required'):raise ValueError('Unknown identity_mode')
     identity_keys=('student','student_id','class','supervisor','major')
     for key in required:
@@ -49,7 +52,15 @@ def validate(data):
     evidence=data.get('evidence',[])
     if not isinstance(evidence,list) or any(not isinstance(x,dict) or type(x.get('reference'))!=int or not 1<=x['reference']<=len(data['references']) for x in evidence):raise ValueError('evidence entries must map to existing reference numbers')
 
-def build(data,output):
+def prose(text, data):
+    if data.get('preserve_numeric_spaces', False):
+        return text
+    # Only ordinary horizontal blanks between Chinese prose and a number.
+    # Preserve units, English text, titles, tabs and intentional hard spaces.
+    return re.sub(r'(?<=[\u3400-\u9fff，。；：！？、（])[ \u3000]+(?=[0-9０-９])', '', text)
+
+
+def build(data,output,*,overrides=None):
     validate(data);output=Path(output)
     if output.exists():raise FileExistsError('Refusing to overwrite '+str(output))
     doc=Document(ROOT/'assets/reference.docx')
@@ -73,14 +84,14 @@ def build(data,output):
     for e in list(doc.element.body.xpath('.//w:bookmarkStart | .//w:bookmarkEnd')):
         e.getparent().remove(e)
     doc.element.body.append(deepcopy(sections[-1]))
-    install_styles(doc)
+    install_styles(doc, overrides)
     def cover_text(index,text,role):
         p=Paragraph(cover[index],doc);p.clear();p.style='XZIT'+role;p.add_run(text)
         p.paragraph_format.line_spacing=1
         p.paragraph_format.first_line_indent=Pt(0)
         p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.CENTER
     cover_text(6,'实训报告','CoverBanner')
-    cover_text(7,data['title_zh'],'CoverZH')
+    cover_text(7,prose(data['title_zh'],data),'CoverZH')
     cover_text(9,data['title_en'].upper(),'CoverEN')
     identity=Table(cover[16],doc)
     for row,key in zip(identity.rows,('student','student_id','class','supervisor','major')):
@@ -111,7 +122,7 @@ def build(data,output):
     def abstract(title,role,text,kw,lang):
         p=paragraph(doc,title,role);p.paragraph_format.page_break_before=True
         for t in text.split('\n'):
-            if t.strip():paragraph(doc,t,'Abstract'+lang)
+            if t.strip():paragraph(doc,prose(t,data) if lang=='ZH' else t,'Abstract'+lang)
         p=doc.add_paragraph(style='XZITKeywords'+lang)
         p.add_run('关键词' if lang=='ZH' else 'Keywords').bold=True
         p.add_run('  '+('；' if lang=='ZH' else '  ').join(kw))
@@ -127,9 +138,9 @@ def build(data,output):
     for b in data['blocks']:
         typ=b['type']
         if typ=='heading':
-            p=paragraph(doc,b['text'],'H'+str(b['level']))
+            p=paragraph(doc,prose(b['text'],data),'H'+str(b['level']))
             if first and b['level']==1:p.paragraph_format.page_break_before=False;first=False
-        elif typ=='paragraph':paragraph(doc,b['text'],'Body')
+        elif typ=='paragraph':paragraph(doc,prose(b['text'],data),'Body')
         elif typ=='equation':
             from equations import add_equation
             add_equation(doc,b)
@@ -138,11 +149,11 @@ def build(data,output):
             if not 0<width<=6.4:raise ValueError('Figure width exceeds content area')
             p=paragraph(doc,'','Figure');p.paragraph_format.keep_with_next=True
             p.add_run().add_picture(b['path'],width=Inches(width))
-            paragraph(doc,b['caption'],'Caption')
+            paragraph(doc,prose(b['caption'],data),'Caption')
         elif typ=='table':
             rows=b['rows']
             if not rows or not rows[0] or any(len(r)!=len(rows[0]) for r in rows):raise ValueError('Table must be rectangular and nonempty')
-            p=paragraph(doc,b['caption'],'Caption');p.paragraph_format.keep_with_next=True
+            p=paragraph(doc,prose(b['caption'],data),'Caption');p.paragraph_format.keep_with_next=True
             table=doc.add_table(rows=len(rows),cols=len(rows[0]));table.autofit=True
             widths=b.get('widths_cm')
             if widths:
@@ -153,18 +164,18 @@ def build(data,output):
                     for cell,w in zip(row.cells,widths):cell.width=Cm(w)
             borders=child(table._tbl.tblPr,'w:tblBorders')
             for side in ('top','bottom','left','right','insideH','insideV'):
-                child(borders,'w:'+side,val='single' if side in ('top','bottom') else 'nil',sz=12,color='000000')
+                child(borders,'w:'+side,val='single' if side in ('top','bottom') else 'nil',sz=TABLE_OUTER_EIGHTHS,color='000000')
             for i,row in enumerate(table.rows):
                 child(row._tr.get_or_add_trPr(),'w:cantSplit',val=1)
                 if i==0:child(row._tr.get_or_add_trPr(),'w:tblHeader',val=1)
                 for j,cell in enumerate(row.cells):
-                    p=cell.paragraphs[0];p.style='XZITTable';p.add_run(str(rows[i][j]))
+                    p=cell.paragraphs[0];p.style='XZITTable';p.add_run(prose(str(rows[i][j]),data))
                     # Keep short comparison tables intact; long tables require
                     # rendered continuation labels rather than invisible guessing.
                     if len(rows)<=8:p.paragraph_format.keep_with_next=i<len(rows)-1
                     margins=child(cell._tc.get_or_add_tcPr(),'w:tcMar')
                     for side in ('top','bottom'):child(margins,'w:'+side,w=65,type='dxa')
-                    if i==0:child(child(cell._tc.get_or_add_tcPr(),'w:tcBorders'),'w:bottom',val='single',sz=12,color='000000')
+                    if i==0:child(child(cell._tc.get_or_add_tcPr(),'w:tcBorders'),'w:bottom',val='single',sz=TABLE_HEADER_EIGHTHS,color='000000')
             # Explicit row boundaries come from author input or actual Word
             # pagination. Each continuation is a separate table with a header.
             breaks=b.get('break_before_rows',[])
@@ -187,17 +198,22 @@ def build(data,output):
     if data.get('conclusion'):
         paragraph(doc,'结论','H1')
         for part in data['conclusion'].split('\n'):
-            if part.strip():paragraph(doc,part,'Body')
+            if part.strip():paragraph(doc,prose(part,data),'Body')
     if data.get('acknowledgements'):
         paragraph(doc,'致谢','H1')
         for part in data['acknowledgements'].split('\n'):
-            if part.strip():paragraph(doc,part,'Body')
+            if part.strip():paragraph(doc,prose(part,data),'Body')
     paragraph(doc,'参考文献','H1')
     for i,entry in enumerate(data['references'],1):paragraph(doc,f'[{i}] {entry}','Reference')
     for appendix in data.get('appendices',[]):
         paragraph(doc,appendix['title'],'H1')
         for part in appendix['text'].split('\n'):
-            if part.strip():paragraph(doc,part,'Body')
+            if part.strip():paragraph(doc,prose(part,data),'Body')
+    # Direct properties take precedence over spacing inherited from the template.
+    from document_roles import paragraphs
+    for p in paragraphs(doc):
+        if p.style.name.startswith('XZIT') and not p.style.name.startswith('XZITTOC'):
+            disable_auto_spacing(p._p.get_or_add_pPr())
     child(doc.settings.element,'w:updateFields',val='true')
     # The retained DOC was saved with Word 2003 compatibility (11). Modern
     # DOCX output should keep editable equations instead of offering conversion.
@@ -206,8 +222,8 @@ def build(data,output):
     mode=modes[0] if modes else child(compat,'w:compatSetting',name='compatibilityMode')
     mode.set(qn('w:uri'),'http://schemas.microsoft.com/office/word')
     mode.set(qn('w:val'),str(data.get('compatibility_mode',15)))
-    from scholarly_format import format_document
     format_document(doc)
+    hide_cover_page_number(doc)
     output.parent.mkdir(parents=True,exist_ok=True);doc.save(output)
     return output
 
