@@ -2,6 +2,8 @@
 
 依据用户保存的《实训报告模板.doc》制作的报告生成与检查技能。格式优先；以范本明确说明为依据，不声称是学校发布的最新统一标准。
 
+⭐ 如果喜欢，请给我一颗星！
+
 **[详细使用文档](skills/artifact-template-xzit-training-report/references/usage-guide.md)**：环境准备、自然语言调用、完整示例、全部命令参数、旧稿映射、公式、续表、输出解释与常见问题。
 
 配套：[可运行演示输入](skills/artifact-template-xzit-training-report/examples/report-input.json) · [输入字段规范](skills/artifact-template-xzit-training-report/references/input-schema.md) · [验证记录](VALIDATION.md)。演示内容及文献均非真实研究，不能直接提交。
