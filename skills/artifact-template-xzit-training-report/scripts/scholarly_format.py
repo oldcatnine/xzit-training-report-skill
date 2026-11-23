@@ -82,6 +82,44 @@ def unwrap(link):
     parent.remove(link)
 
 
+def unwrap_managed_fields(p, matches):
+    """Expose cached text for Word HYPERLINK fields owned by these rules."""
+    for field in list(p._p.xpath('./w:fldSimple')):
+        if matches(field.get(qn('w:instr'),'')):
+            unwrap(field)
+    begin = separator = None
+    depth = 0
+    instruction = []
+    nested = False
+    for i, node in enumerate(children := list(p._p)):
+        kind = node.find(qn('w:fldChar')) if node.tag == qn('w:r') else None
+        marker = kind.get(qn('w:fldCharType')) if kind is not None else None
+        if marker == 'begin':
+            if depth == 0:
+                begin, separator, instruction, nested = i, None, [], False
+            else:
+                nested = True
+            depth += 1
+        elif marker == 'separate' and depth == 1:
+            separator = i
+        elif marker == 'end' and depth:
+            depth -= 1
+            if depth == 0 and separator is not None and not nested and matches(''.join(instruction)):
+                for part in children[begin:separator+1] + [node]:
+                    p._p.remove(part)
+        elif depth == 1 and separator is None:
+            instruction.extend(part.text or '' for part in node.iter(qn('w:instrText')))
+
+
+def is_doi_field(instruction):
+    match = re.match(r'^\s*HYPERLINK\s+"?([^"\s]+)',instruction,re.I)
+    return bool(match and DOI_URL.match(match[1]))
+
+
+def is_citation_field(instruction):
+    return bool(re.match(r'^\s*HYPERLINK\s+\\l\s+"?'+PREFIX+r'\d+(?=["\s]|$)',instruction,re.I))
+
+
 def adjust_author_case(p):
     nodes = p._p.xpath('./w:r/w:t | ./w:hyperlink/w:r/w:t')
     plain = ''.join(n.text or '' for n in nodes)
@@ -130,6 +168,7 @@ def format_document(doc,role_map=None):
         for pe in ps:
             p=Paragraph(pe,doc)
             if pe in ref_elements:
+                unwrap_managed_fields(p,is_doi_field)
                 for link in list(p._p.xpath('./w:hyperlink[@r:id]')):
                     rid = link.get(qn('r:id'))
                     target = p.part.rels.get(rid)
@@ -139,6 +178,7 @@ def format_document(doc,role_map=None):
                 removed_dois += replace_plain_spans(p,DOI_SPAN,lambda *_: [])
                 adjust_author_case(p)
             elif pe in body_elements:
+                unwrap_managed_fields(p,is_citation_field)
                 for link in list(p._p.xpath('./w:hyperlink')):
                     if link.get(qn('w:anchor'),'').startswith(PREFIX):
                         unwrap(link)
@@ -204,7 +244,8 @@ def audit_links(doc,role_map=None):
                     failures.append('Unlinked citation number: '+digits[0])
     for p in refs.values():
         targets = [p.part.rels.get(e.get(qn('r:id'))) for e in p._p.xpath('./w:hyperlink[@r:id]')]
-        if DOI_SPAN.search(p.text) or any(target and DOI_URL.match(target.target_ref) for target in targets):
+        fields = p._p.xpath('./w:fldSimple/@w:instr | ./w:r/w:instrText/text()')
+        if DOI_SPAN.search(p.text) or any(target and DOI_URL.match(target.target_ref) for target in targets) or any(is_doi_field(field) for field in fields):
             failures.append('Remove DOI from bibliography: '+p.text[:70])
         if author_spans(p.text):
             failures.append('Use capitalization for English author names: '+p.text[:70])

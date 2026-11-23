@@ -81,4 +81,22 @@ class ScholarlyTests(unittest.TestCase):
         format_document(d)
         self.assertEqual(xml,d.element.xml)
 
+    def test_word_saved_hyperlink_fields(self):
+        d=self.make()
+        d.add_paragraph('[2] Other Author. Example.',style='XZITReference')
+        body=next(p for p in d.paragraphs if p.style.name=='XZITBody')
+        ref=next(p for p in d.paragraphs if p.style.name=='XZITReference')
+        from report_format import field
+        body.clear()
+        field(body,r'HYPERLINK \l "xzit_ref_1"','[1]')
+        body.add_run('[2]')
+        ref.add_run(' DOI:')
+        field(ref,'HYPERLINK "https://doi.org/10.1234/example"','10.1234/example')
+        ref.add_run('.')
+        original=ref.text.split(' DOI:')[0]
+        format_document(d)
+        self.assertEqual(body.text,'[1,2]')
+        self.assertEqual(ref.text,original)
+        self.assertEqual(audit_links(d)['status'],'pass')
+
 if __name__=='__main__':unittest.main()
